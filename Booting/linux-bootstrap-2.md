@@ -39,7 +39,7 @@
 使用这2个信息，我们可以通过下面的公式计算出对应的物理地址 
 
 ```
-PhysicalAddress = Segment * 16 + Offset
+PhysicalAddress = Segment Selector * 16 + Offset
 ```
 
 在保护模式中，内存段的定义和实模式完全不同。在保护模式中，每个内存段不再是64K大小，段的大小和起始位置是通过一个叫做`段描述符`的数据结构进行描述。所有内存段的段描述符存储在一个叫做`全局描述符表`(GDT)的内存结构中。
@@ -160,8 +160,8 @@ lgdt gdt
 在保护模式中，cpu是通过下面的步骤来找到一个具体的物理地址的：
 
 * 代码必须将相应的`段选择子`装入某个段寄存器
-* CPU根据`段选择子`从GDT中找到一个匹配的段描述符，然后将段描述符放入段寄存器的隐藏部分
-* 在没有使用向下扩展段的时候，那么内存段的基地址就是`段描述符中的基地址`，段描述符的`limit + 1`就是内存段的长度。如果你知道一个内存地址的`偏移`，那么在没有开启分页机制的情况下，这个内存的物理地址就是`基地址+偏移`
+* CPU根据`段选择子`从GDT中找到一个匹配的段描述符GDT:基地址+Index，然后将段描述符放入段寄存器的隐藏部分
+* 在没有开启页时候，那么内存段的线性地址或者说是物理地址,通过这个公式得到:BASE(从段描述符获得)+Offset(这个偏移是内存的具体内存地址偏移)
 
 ![linear address](http://oi62.tinypic.com/2yo369v.jpg)
 
@@ -169,7 +169,7 @@ lgdt gdt
 
 * 禁止中断发生
 * 使用命令 `lgdt` 将GDT表装入 `GDTR` 寄存器
-* 设置CR0寄存器的PE位为1，使CPU进入保护模式
+* 设置CR0寄存器(Control Register 0)的PE(Protection Enable)位为1，使CPU进入保护模式
 * 跳转开始执行保护模式代码
 
 在后面的章节中，我们将看到Linux 内核中完整的转换代码。不过在系统进入保护模式之前，内核有很多的准备工作需要进行。
@@ -181,9 +181,9 @@ lgdt gdt
 
 让我们从`main`函数开始看起，这个函数中，首先调用了[`copy_boot_params(void)`](http://lxr.free-electrons.com/source/arch/x86/boot/main.c?v=3.18#L30)。 
 
-这个函数将内核设置信息拷贝到`boot_params`结构的相应字段。大家可以在[arch/x86/include/uapi/asm/bootparam.h](http://lxr.free-electrons.com/source/arch/x86/include/uapi/asm/bootparam.h?v=3.18#L113)找到`boot_params`结构的定义。
+这个函数将内核头部信息拷贝到`boot_params`结构的相应字段。大家可以在[arch/x86/include/uapi/asm/bootparam.h](http://lxr.free-electrons.com/source/arch/x86/include/uapi/asm/bootparam.h?v=3.18#L113)找到`boot_params`结构的定义。
 
-`boot_params`结构中包含`struct setup_header hdr`字段。这个结构包含了[linux boot protocol](https://www.kernel.org/doc/Documentation/x86/boot.txt)中定义的相同字段，并且由boot loader填写。在内核编译的时候`copy_boot_params`完成两个工作：
+`boot_params`结构中包含`struct setup_header hdr`字段。这个结构包含了[linux boot protocol](https://www.kernel.org/doc/Documentation/x86/boot.txt)中定义的相同字段，并且由boot loader填写。在内核编译/构建的时候`copy_boot_params`完成两个工作：
 
 1. 将[header.S](http://lxr.free-electrons.com/source/arch/x86/boot/header.S?v=3.18#L281)中定义的 `hdr` 结构中的内容拷贝到 `boot_params` 结构的字段 `struct setup_header hdr` 中。
 
@@ -227,7 +227,7 @@ ENDPROC(memcpy)
 	END(name)
 ```
 
-`memcpy` 的实现代码是很容易理解的。首先，代码将 `si` 和 `di` 寄存器的值压入堆栈进行保存，这么做的原因是因为后续的代码将修改 `si` 和 `di` 寄存器的值。`memcpy` 函数（也包括其他定义在copy.s中的其他函数）使用了 `fastcall` 调用规则，意味着所有的函数调用参数是通过 `ax`, `dx`,  `cx`寄存器传入的，而不是传统的通过堆栈传入。因此在使用下面的代码调用 `memcpy` 函数的时候
+`memcpy` 的实现代码是很容易理解的。首先，代码将 `si` 和 `di` 寄存器的值压入堆栈进行保留，这么做的原因是因为后续的代码将修改 `si` 和 `di` 寄存器的值。`memcpy` 函数（也包括其他定义在copy.s中的其他函数）使用了 `fastcall` 调用规则，意味着所有的函数调用参数是通过 `ax`, `dx`,  `cx`寄存器传入的，而不是传统的通过堆栈传入。因此在使用下面的代码调用 `memcpy` 函数的时候
 
 ```c
 memcpy(&boot_params.hdr, &hdr, sizeof hdr);
